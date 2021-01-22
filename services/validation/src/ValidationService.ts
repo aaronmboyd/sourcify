@@ -243,7 +243,7 @@ export class ValidationService implements IValidationService {
             }
 
             if (file && file.content) {
-                foundSources[fileName] = file;
+                foundSources[fileName] = file.content;
             } else {
                 missingSources[fileName] = { keccak256: hash, urls: sourceInfo.urls };
             }

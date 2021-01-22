@@ -2,6 +2,7 @@ import { StringMap } from '@ethereum-sourcify/core';
 import { SourceFetcher, SourceAddress } from './source-fetcher';
 import Logger from 'bunyan';
 import Web3 from 'web3';
+import { CheckedContract } from '@ethereum-sourcify/core';
 
 type PendingSource = { keccak256: string, urls: string[], name: string };
 interface PendingSourceMap {
@@ -10,23 +11,24 @@ interface PendingSourceMap {
 type Metadata = { sources: PendingSourceMap };
 
 export default class PendingContract {
+    private metadata: Metadata;
     private pendingSources: PendingSourceMap;
     private fetchedSources: StringMap;
     private sourceFetcher: SourceFetcher;
-    private callback: (fetchedSources: StringMap) => any;
+    private callback: (contract: CheckedContract) => any;
     private logger = new Logger({ name: "Pending Contract" });
 
-    constructor(metadataAddress: SourceAddress, sourceFetcher: SourceFetcher, callback: (fetchedSources: StringMap) => any) {
+    constructor(metadataAddress: SourceAddress, sourceFetcher: SourceFetcher, callback: (checkedContract: CheckedContract) => any) {
         this.sourceFetcher = sourceFetcher;
         this.sourceFetcher.subscribe(metadataAddress, this.addMetadata);
         this.callback = callback;
     }
 
     private addMetadata = (rawMetadata: string) => {
-        const metadata: Metadata = JSON.parse(rawMetadata);
+        this.metadata = JSON.parse(rawMetadata);
         this.pendingSources = {};
-        for (const name in metadata.sources) {
-            const source = metadata.sources[name];
+        for (const name in this.metadata.sources) {
+            const source = this.metadata.sources[name];
             source.name = name;
             this.pendingSources[source.keccak256] = source;
 
@@ -37,7 +39,7 @@ export default class PendingContract {
         }
     }
 
-    private addFetchedSource = (source: string) => {
+    private addFetchedSource = (name: string, source: string) => {
         const hash = Web3.utils.keccak256(source);
         const deleted = delete this.pendingSources[hash];
 
@@ -49,7 +51,8 @@ export default class PendingContract {
 
         this.fetchedSources[name] = source;
         if (isObjectEmpty(this.pendingSources)) {
-            this.callback(this.fetchedSources);
+            const contract = new CheckedContract(this.metadata, this.fetchedSources);
+            this.callback(contract);
         }
     }
 }

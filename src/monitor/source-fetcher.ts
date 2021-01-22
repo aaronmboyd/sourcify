@@ -1,8 +1,8 @@
 import Logger from "bunyan";
-import nodeFetch from "node-fetch";
+import nodeFetch from 'node-fetch';
 import { IGateway, SimpleGateway, SourceOrigin } from "./gateway";
 
-type FetchedFileCallback= (fetchedFile: string) => any;
+export type FetchedFileCallback= (name: string, fetchedFile: string) => any;
 
 const IPFS_PREFIX = "dweb:/ipfs/";
 const SWARM_PREFIX = "bzz-raw:/";
@@ -81,7 +81,7 @@ export class SourceFetcher {
     private notifySubscribers(hash: string, file: string) {
         const subscription = this.subscriptions[hash];
         delete this.subscriptions[hash];
-        subscription.subscribers.forEach(callback => callback(file));
+        subscription.subscribers.forEach(callback => callback(hash, file));
     }
 
     subscribe(sourceAddress: SourceAddress, callback: FetchedFileCallback): void {
