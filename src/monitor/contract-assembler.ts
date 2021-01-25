@@ -1,6 +1,7 @@
 import { CheckedContract } from "@ethereum-sourcify/core";
 import PendingContract from "./pending-contract";
-import { SourceAddress, SourceFetcher } from "./source-fetcher";
+import SourceFetcher from "./source-fetcher";
+import { SourceAddress } from "./util";
 
 export default class ContractAssembler {
 
@@ -10,7 +11,7 @@ export default class ContractAssembler {
         this.sourceFetcher = sourceFetcher;
     }
 
-    assemble(metadataAddress: SourceAddress, callback: (contract: CheckedContract) => any) { // TODO function type
+    assemble(metadataAddress: SourceAddress, callback: (contract: CheckedContract) => void) {
         new PendingContract(metadataAddress, this.sourceFetcher, callback);
     }
 }

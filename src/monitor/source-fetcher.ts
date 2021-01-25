@@ -1,52 +1,25 @@
 import Logger from "bunyan";
 import nodeFetch from 'node-fetch';
-import { IGateway, SimpleGateway, SourceOrigin } from "./gateway";
-
-export type FetchedFileCallback= (name: string, fetchedFile: string) => any;
-
-const IPFS_PREFIX = "dweb:/ipfs/";
-const SWARM_PREFIX = "bzz-raw:/";
-
-export class SourceAddress {
-    origin: SourceOrigin;
-    id: string;
-
-    constructor(origin: SourceOrigin, id: string) {
-        this.origin = origin;
-        this.id = id;
-    }
-
-    getUniqueIdentifier(): string {
-        return this.origin + "-" + this.id;
-    }
-
-    static from(url: string): SourceAddress {
-        if (url.startsWith(IPFS_PREFIX)) {
-            return new SourceAddress("ipfs", url.slice(IPFS_PREFIX.length));
-        } else if (url.startsWith(SWARM_PREFIX)) {
-            return new SourceAddress("bzzr1", url.slice(SWARM_PREFIX.length));
-        }
-
-        throw new Error(`Could not deduce source origin from url: ${url}`);
-    }
-}
+import { IGateway, SimpleGateway } from "./gateway";
+import { SourceAddress, FetchedFileCallback } from "./util";
 
 type Subscription = {
     sourceAddress: SourceAddress;
     subscribers: Array<FetchedFileCallback>;
 }
 
-declare interface Subscriptions {
+declare interface SubscriptionMap {
     [hash: string]: Subscription
 }
 
-export class SourceFetcher {
-    private subscriptions: Subscriptions;
+export default class SourceFetcher {
+    private subscriptions: SubscriptionMap = {};
     private logger = new Logger({ name: "SourceFetcher" });
 
     private gateways: IGateway[] = [
         new SimpleGateway("ipfs", "https://ipfs.infura.io:5001/api/v0/cat?arg="),
-        new SimpleGateway("bzzr1", "https://swarm-gateways.net/bzz-raw:/")
+        new SimpleGateway("bzzr1", "https://swarm-gateways.net/bzz-raw:/"),
+        new SimpleGateway("bzzr0", "https://swarm-gateways.net/bzz-raw:/")
     ];
 
     constructor(refreshInterval = 15) {
@@ -59,11 +32,22 @@ export class SourceFetcher {
             const gateway = this.findGateway(subscription.sourceAddress);
             const fetchUrl = gateway.createUrl(subscription.sourceAddress.id);
             nodeFetch(fetchUrl).then(resp => {
-                return resp.text();
-            }).then(file => {
-                this.notifySubscribers(sourceHash, file);
+                if (resp.status === 200) {
+                    resp.text().then(file => {
+                        this.notifySubscribers(sourceHash, file);
+                    });
+
+                } else {
+                    resp.text().then(msg => this.logger.error({
+                        loc: "[SOURCE_FETCHER:FETCH_FAILED]",
+                        status: resp.status,
+                        statusText: resp.statusText
+                    }, msg));
+                }
             }).catch(err => {
-                this.logger.error(err.message);
+                this.logger.error({
+                    loc: "[SOURCE_FETCHER]",
+                }, err.message);
             });
         }
     }
@@ -78,10 +62,21 @@ export class SourceFetcher {
         throw new Error(`Gateway not found for ${sourceAddress.origin}`);
     }
 
-    private notifySubscribers(hash: string, file: string) {
-        const subscription = this.subscriptions[hash];
-        delete this.subscriptions[hash];
-        subscription.subscribers.forEach(callback => callback(hash, file));
+    private notifySubscribers(id: string, file: string) {
+        if (!(id in this.subscriptions)) {
+            return;
+        }
+
+        const subscription = this.subscriptions[id];
+        delete this.subscriptions[id];
+
+        this.logger.info({
+            loc: "[SOURCE_FETCHER:NOTIFY]",
+            id,
+            subscribers: subscription.subscribers.length
+        }, "notifying of successful fetching");
+
+        subscription.subscribers.forEach(callback => callback(file));
     }
 
     subscribe(sourceAddress: SourceAddress, callback: FetchedFileCallback): void {
