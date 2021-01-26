@@ -18,12 +18,12 @@ export default class SourceFetcher {
 
     private gateways: IGateway[] = [
         new SimpleGateway("ipfs", "https://ipfs.infura.io:5001/api/v0/cat?arg="),
-        new SimpleGateway("bzzr1", "https://swarm-gateways.net/bzz-raw:/"),
-        new SimpleGateway("bzzr0", "https://swarm-gateways.net/bzz-raw:/")
+        // new SimpleGateway(["bzzr0", "bzzr1"], "https://swarm-gateways.net/bzz-raw:/"), // TODO delete
+        new SimpleGateway(["bzzr0", "bzzr1"], "https://gateway.ethswarm.org/bzz:/")
     ];
 
-    constructor(refreshInterval = 15) {
-        setInterval(this.fetch, refreshInterval * 1000);
+    constructor(refreshInterval = 15*1000) {
+        setInterval(this.fetch, refreshInterval);
     }
 
     private fetch = (): void => {
@@ -32,18 +32,20 @@ export default class SourceFetcher {
             const gateway = this.findGateway(subscription.sourceAddress);
             const fetchUrl = gateway.createUrl(subscription.sourceAddress.id);
             nodeFetch(fetchUrl).then(resp => {
-                if (resp.status === 200) {
-                    resp.text().then(file => {
-                        this.notifySubscribers(sourceHash, file);
-                    });
+                resp.text().then(text => {
+                    if (resp.status === 200) {
+                        this.notifySubscribers(sourceHash, text);
 
-                } else {
-                    resp.text().then(msg => this.logger.error({
-                        loc: "[SOURCE_FETCHER:FETCH_FAILED]",
-                        status: resp.status,
-                        statusText: resp.statusText
-                    }, msg));
-                }
+                    } else {
+                        this.logger.error({
+                            loc: "[SOURCE_FETCHER:FETCH_FAILED]",
+                            status: resp.status,
+                            statusText: resp.statusText,
+                            sourceHash
+                        }, text);
+                    }
+                });
+
             }).catch(err => {
                 this.logger.error({
                     loc: "[SOURCE_FETCHER]",
@@ -74,7 +76,7 @@ export default class SourceFetcher {
             loc: "[SOURCE_FETCHER:NOTIFY]",
             id,
             subscribers: subscription.subscribers.length
-        }, "notifying of successful fetching");
+        }, "Fetching successful");
 
         subscription.subscribers.forEach(callback => callback(file));
     }

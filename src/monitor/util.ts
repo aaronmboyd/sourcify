@@ -2,8 +2,15 @@ export type SourceOrigin = "ipfs" | "bzzr1" | "bzzr0"; // TODO bzzr0?
 
 export type FetchedFileCallback= (fetchedFile: string) => any;
 
-const IPFS_PREFIX = "dweb:/ipfs/";
-const SWARM_PREFIX = "bzz-raw:/";
+interface Prefix {
+    regex: RegExp,
+    origin: SourceOrigin
+}
+
+const PREFIXES: Prefix[] = [
+    { origin: "ipfs", regex: /dweb:\/ipfs\/{1,2}/ },
+    { origin: "bzzr1", regex: /bzz-raw:\/{1,2}/ }
+];
 
 export class SourceAddress {
     origin: SourceOrigin;
@@ -19,13 +26,13 @@ export class SourceAddress {
     }
 
     static from(url: string): SourceAddress {
-        if (url.startsWith(IPFS_PREFIX)) {
-            return new SourceAddress("ipfs", url.slice(IPFS_PREFIX.length));
-
-        } else if (url.startsWith(SWARM_PREFIX)) {
-            return new SourceAddress("bzzr1", url.slice(SWARM_PREFIX.length));
+        for (const prefix of PREFIXES) {
+            const attempt = url.replace(prefix.regex, "");
+            if (attempt !== url) {
+                return new SourceAddress(prefix.origin, attempt);
+            }
         }
 
-        throw new Error(`Could not deduce source origin from url: ${url}`);
+        return null;
     }
 }

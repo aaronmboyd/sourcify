@@ -6,9 +6,10 @@ import SourceFetcher from "./source-fetcher";
 import { SourceAddress } from "./util";
 import { ethers } from "ethers";
 import ContractAssembler from "./contract-assembler";
-// import FetchFinalizer from "./fetch-finalizer"; // TODO delete
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const multihashes = require("multihashes");
+
+const INITIAL_TRIES = 3;
 
 function createsContract(tx: any): boolean { // TODO type
     return !tx.to;
@@ -21,6 +22,9 @@ class ChainMonitor {
     private logger: Logger;
     private injector: Injector;
     private lastBlockNumber: number;
+
+    private intervalObject: NodeJS.Timeout
+    private intervalTime: number;
 
     constructor(name: string, chainId: string, web3Url: string, contractAssembler: ContractAssembler, injector: Injector) {
         this.chainId = chainId;
@@ -37,12 +41,12 @@ class ChainMonitor {
             }
             this.logger.info({ loc: "[MONITOR:START]", blockNumber }, "Starting monitor");
             this.lastBlockNumber = blockNumber - 1;
-            setInterval(this.processNextBlock, 5000); // TODO
+            setInterval(this.processNextBlock, this.intervalTime);
         });
     }
 
     stop(): void {
-        throw new Error("Not implemented");
+        clearInterval(this.intervalObject);
     }
 
     private processNextBlock = () => {
@@ -62,21 +66,39 @@ class ChainMonitor {
             for (const tx of block.transactions) {
                 if (createsContract(tx)) {
                     const address = ethers.utils.getContractAddress(tx);
-                    this.web3Provider.eth.getCode(address).then(bytecode => {
-                        const numericBytecode = Web3.utils.hexToBytes(bytecode);
-                        const cborData = cborDecode(numericBytecode);
-                        const metadataAddress = this.getMetadataAddress(cborData);
-                        this.contractAssembler.assemble(metadataAddress, contract => {
-                            this.injector.inject({
-                                contract,
-                                bytecode,
-                                chain: this.chainId,
-                                addresses: [address]
-                            });
-                        });
-                    });
+                    this.processBytecode(address, INITIAL_TRIES);
                 }
             }
+        });
+    }
+
+    private processBytecode(address: string, retriesLeft: number): void {
+        if (retriesLeft <= 0) {
+            return;
+        }
+
+        this.web3Provider.eth.getCode(address).then(bytecode => {
+            if (bytecode === "0x") {
+                this.logger.info({ loc: "[PROCESS_BYTECODE]", address }, "Empty bytecode");
+                setTimeout(address, retriesLeft-1);
+                return;
+            }
+
+            const numericBytecode = Web3.utils.hexToBytes(bytecode);
+            const cborData = cborDecode(numericBytecode); // TODO might throw
+            const metadataAddress = this.getMetadataAddress(cborData);
+            this.contractAssembler.assemble(metadataAddress, contract => {
+                const logObject = { loc: "[PROCESS_BYTECODE]", contract: contract.name, address };
+                this.injector.inject({
+                    contract,
+                    bytecode,
+                    chain: this.chainId,
+                    addresses: [address]
+                }).then(() => this.logger.info(logObject, "Successfully injected")
+                ).catch(err => this.logger.error(logObject, err.message));
+            });
+        }).catch(err => {
+            this.logger.error({ loc: "[GET_BYTECODE]", address }, err.message);
         });
     }
 
@@ -90,26 +112,31 @@ class ChainMonitor {
         } else if (cborData.bzzr1) {
             const metadataId = Web3.utils.bytesToHex(cborData.bzzr1).slice(2);
             return new SourceAddress("bzzr1", metadataId);
+
         } else if (cborData.bzzr0) {
             const metadataId = Web3.utils.bytesToHex(cborData.bzzr0).slice(2);
             return new SourceAddress("bzzr0", metadataId);
         }
 
         const msg = `Unsupported metadata file format: ${Object.keys(cborData)}`;
-        this.logger.error(msg);
+        this.logger.error({ loc: "[MONITOR:GET_METADATA_ADDRESS]" }, msg);
         throw new Error(msg);
     }
 }
 
 export default class Monitor {
     private chainMonitors: ChainMonitor[];
+    private injector: Injector;
 
     constructor(config: MonitorConfig) {
-        const contractAssembler = new ContractAssembler(new SourceFetcher());
-        const injector = Injector.createOffline({
+        this.injector = Injector.createOffline({
             log: new Logger({ name: "Monitor" }),
             repositoryPath: config.repository
         });
+    }
+
+    start(config: {name: string, chainId: string, url: string}): void {
+        const contractAssembler = new ContractAssembler(new SourceFetcher());
 
         const chains = getMonitoredChains();
         this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
@@ -117,11 +144,19 @@ export default class Monitor {
             chain.chainId.toString(),
             chain.web3[0].replace("${INFURA_ID}", process.env.INFURA_ID),
             contractAssembler,
-            injector
+            this.injector
         ));
-    }
 
-    start(): void {
+        if (config) {
+            this.chainMonitors.push(new ChainMonitor(
+                config.name,
+                config.chainId,
+                config.url,
+                contractAssembler,
+                this.injector
+            ));
+        }
+
         this.chainMonitors.forEach(chainMonitor => chainMonitor.start());
     }
 

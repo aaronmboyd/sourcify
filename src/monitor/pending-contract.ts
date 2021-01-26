@@ -34,7 +34,15 @@ export default class PendingContract {
             this.pendingSources[source.keccak256] = source;
 
             for (const url of source.urls) { // TODO make this more efficient; this might leave unnecessary subscriptions hanging
-                this.sourceFetcher.subscribe(SourceAddress.from(url), this.addFetchedSource);
+                const sourceAddress = SourceAddress.from(url);
+                if (!sourceAddress){
+                    this.logger.error(
+                        { loc: "[ADD_METADATA]", url, name },
+                        "Could not determine source file location"
+                    );
+                    continue;
+                }
+                this.sourceFetcher.subscribe(sourceAddress, this.addFetchedSource);
             }
         }
     }
@@ -43,14 +51,8 @@ export default class PendingContract {
         const hash = Web3.utils.keccak256(sourceContent);
         const source = this.pendingSources[hash];
 
-        if (source.name in this.fetchedSources) {
+        if (!source || source.name in this.fetchedSources) {
             return;
-        }
-
-        if (!source) {
-            const msg = `Attempted addition of a nonrequired source (${hash}) to contract`; // TODO id of contract
-            this.logger.error({ loc: "[PENDING_CONTRACT]", hash}, msg); // TODO id of contract
-            throw new Error(msg);
         }
 
         delete this.pendingSources[hash];

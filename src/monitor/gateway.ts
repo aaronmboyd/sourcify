@@ -6,16 +6,16 @@ export declare interface IGateway {
 }
 
 export class SimpleGateway implements IGateway {
-    private origin: SourceOrigin;
+    private origins: SourceOrigin[];
     private baseUrl: string;
 
-    constructor(origin: SourceOrigin, baseUrl: string) {
-        this.origin = origin;
+    constructor(origins: SourceOrigin | SourceOrigin[], baseUrl: string) {
+        this.origins = [].concat(origins);
         this.baseUrl = baseUrl;
     }
 
     worksWith(origin: SourceOrigin): boolean {
-        return origin === this.origin;
+        return this.origins.includes(origin);
     }
 
     createUrl(fetchId: string): string {

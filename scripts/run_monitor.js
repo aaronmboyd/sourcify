@@ -15,6 +15,7 @@ if (process.env.TESTING === "true"){
 
   config = {
     name: 'localhost',
+    chainId: 1337,
     url: process.env.LOCALCHAIN_URL
   }
 }
