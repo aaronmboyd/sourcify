@@ -2,16 +2,12 @@ import { cborDecode, getMonitoredChains, MonitorConfig } from "@ethereum-sourcif
 import { Injector } from "@ethereum-sourcify/verification";
 import Logger from "bunyan";
 import Web3 from "web3";
-import SourceFetcher from "./source-fetcher";
+import { Transaction } from "web3-core";
 import { SourceAddress } from "./util";
 import { ethers } from "ethers";
 import ContractAssembler from "./contract-assembler";
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const multihashes = require("multihashes");
 
-const INITIAL_TRIES = 3;
-
-function createsContract(tx: any): boolean { // TODO type
+function createsContract(tx: Transaction): boolean {
     return !tx.to;
 }
 
@@ -21,10 +17,10 @@ class ChainMonitor {
     private contractAssembler: ContractAssembler;
     private logger: Logger;
     private injector: Injector;
-    private lastBlockNumber: number;
 
-    private intervalObject: NodeJS.Timeout
-    private intervalTime: number;
+    private getCodeRetryPause: number;
+    private getBlockPause: number;
+    private initialGetBlockTries: number;
 
     constructor(name: string, chainId: string, web3Url: string, contractAssembler: ContractAssembler, injector: Injector) {
         this.chainId = chainId;
@@ -32,61 +28,57 @@ class ChainMonitor {
         this.contractAssembler = contractAssembler;
         this.logger = new Logger({ name });
         this.injector = injector;
+
+        this.getCodeRetryPause = parseInt(process.env.GET_CODE_RETRY_PAUSE) || (2 * 1000);
+        this.getBlockPause = parseInt(process.env.GET_BLOCK_PAUSE) || (2 * 1000);
+        this.initialGetBlockTries = parseInt(process.env.INITIAL_GET_BLOCK_TRIES) || 3;
     }
 
-    start(): void {
-        this.web3Provider.eth.getBlockNumber((err, blockNumber) => {
-            if (err) {
-                throw new Error(err.message);
-            }
-            this.logger.info({ loc: "[MONITOR:START]", blockNumber }, "Starting monitor");
-            this.lastBlockNumber = blockNumber - 1;
-            setInterval(this.processNextBlock, this.intervalTime);
-        });
+    start = async (): Promise<void> => {
+        const rawStartBlock = process.env[`MONITOR_START_${this.chainId}`];
+        const startBlock = parseInt(rawStartBlock) || await this.web3Provider.eth.getBlockNumber();
+        this.processBlock(startBlock);
+        this.logger.info({ loc: "[MONITOR_START]", startBlock }, "Starting monitor");
     }
 
-    stop(): void {
-        clearInterval(this.intervalObject);
-    }
-
-    private processNextBlock = () => {
-        this.web3Provider.eth.getBlock(this.lastBlockNumber + 1, true, (err, block) => {
-            if (err) {
-                this.logger.error({ loc: "[PROCESS_NEXT_BLOCK]" }, err.message);
-                return;
-            }
-
+    private processBlock = (blockNumber: number) => {
+        this.web3Provider.eth.getBlock(blockNumber, true).then(block => {
             if (!block) {
-                this.logger.info({ loc: "[PROCESS_NEXT_BLOCK]" }, "Waiting for new blocks");
+                this.logger.info({ loc: "[PROCESS_BLOCK]", blockNumber }, "Waiting for new blocks");
                 return;
             }
-
-            this.lastBlockNumber++;
 
             for (const tx of block.transactions) {
                 if (createsContract(tx)) {
                     const address = ethers.utils.getContractAddress(tx);
-                    this.processBytecode(address, INITIAL_TRIES);
+                    this.processBytecode(address, this.initialGetBlockTries);
                 }
             }
+
+            blockNumber++;
+
+        }).catch(err => {
+            this.logger.error({ loc: "[PROCESS_BLOCK:FAILED]", blockNumber }, err.message);
+        }).finally(() => {
+            setTimeout(this.processBlock, this.getBlockPause, blockNumber);
         });
     }
 
-    private processBytecode(address: string, retriesLeft: number): void {
-        if (retriesLeft <= 0) {
+    private processBytecode = (address: string, retriesLeft: number): void => {
+        if (retriesLeft-- <= 0) {
             return;
         }
 
         this.web3Provider.eth.getCode(address).then(bytecode => {
             if (bytecode === "0x") {
-                this.logger.info({ loc: "[PROCESS_BYTECODE]", address }, "Empty bytecode");
-                setTimeout(address, retriesLeft-1);
+                this.logger.info({ loc: "[PROCESS_BYTECODE]", address, retriesLeft }, "Empty bytecode");
+                setTimeout(this.processBytecode, this.getCodeRetryPause, address, retriesLeft);
                 return;
             }
 
             const numericBytecode = Web3.utils.hexToBytes(bytecode);
-            const cborData = cborDecode(numericBytecode); // TODO might throw
-            const metadataAddress = this.getMetadataAddress(cborData);
+            const cborData = cborDecode(numericBytecode); // TODO can this throw?
+            const metadataAddress = SourceAddress.fromCborData(cborData);
             this.contractAssembler.assemble(metadataAddress, contract => {
                 const logObject = { loc: "[PROCESS_BYTECODE]", contract: contract.name, address };
                 this.injector.inject({
@@ -98,29 +90,9 @@ class ChainMonitor {
                 ).catch(err => this.logger.error(logObject, err.message));
             });
         }).catch(err => {
-            this.logger.error({ loc: "[GET_BYTECODE]", address }, err.message);
+            this.logger.error({ loc: "[GET_CODE]", address, retriesLeft }, err.message);
+            setTimeout(this.processBytecode, this.getCodeRetryPause, address, retriesLeft);
         });
-    }
-
-    private getMetadataAddress(cborData: any): SourceAddress {
-        // TODO reduce code duplication
-        // TODO what can cborData.keys be?
-        if (cborData.ipfs) {
-            const metadataId = multihashes.toB58String(cborData.ipfs);
-            return new SourceAddress("ipfs", metadataId);
-
-        } else if (cborData.bzzr1) {
-            const metadataId = Web3.utils.bytesToHex(cborData.bzzr1).slice(2);
-            return new SourceAddress("bzzr1", metadataId);
-
-        } else if (cborData.bzzr0) {
-            const metadataId = Web3.utils.bytesToHex(cborData.bzzr0).slice(2);
-            return new SourceAddress("bzzr0", metadataId);
-        }
-
-        const msg = `Unsupported metadata file format: ${Object.keys(cborData)}`;
-        this.logger.error({ loc: "[MONITOR:GET_METADATA_ADDRESS]" }, msg);
-        throw new Error(msg);
     }
 }
 
@@ -133,34 +105,26 @@ export default class Monitor {
             log: new Logger({ name: "Monitor" }),
             repositoryPath: config.repository
         });
+
+        this.start();
     }
 
-    start(config: {name: string, chainId: string, url: string}): void {
-        const contractAssembler = new ContractAssembler(new SourceFetcher());
+    start = (): void => {
+        const contractAssembler = new ContractAssembler();
+        if (process.env.TESTING === "true") {
+            throw new Error("Testing not yet supported");
 
-        const chains = getMonitoredChains();
-        this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
-            chain.name,
-            chain.chainId.toString(),
-            chain.web3[0].replace("${INFURA_ID}", process.env.INFURA_ID),
-            contractAssembler,
-            this.injector
-        ));
-
-        if (config) {
-            this.chainMonitors.push(new ChainMonitor(
-                config.name,
-                config.chainId,
-                config.url,
+        } else {
+            const chains = getMonitoredChains().filter(c => c.network === "goerli"); // TODO testing
+            this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
+                chain.name,
+                chain.chainId.toString(),
+                chain.web3[0].replace("${INFURA_ID}", process.env.INFURA_ID),
                 contractAssembler,
                 this.injector
             ));
         }
 
         this.chainMonitors.forEach(chainMonitor => chainMonitor.start());
-    }
-
-    stop(): void {
-        this.chainMonitors.forEach(chainMonitor => chainMonitor.stop());
     }
 }

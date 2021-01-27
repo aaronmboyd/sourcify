@@ -28,13 +28,17 @@ export default class PendingContract {
     private addMetadata = (rawMetadata: string) => {
         this.metadata = JSON.parse(rawMetadata);
         this.pendingSources = {};
+
+        const count = Object.keys(this.metadata.sources).length;
+        this.logger.info({ loc: "[PENDING_CONTRACT:ADD_METADATA]", count }, "New pending files");
+
         for (const name in this.metadata.sources) {
             const source = this.metadata.sources[name];
             source.name = name;
             this.pendingSources[source.keccak256] = source;
 
             for (const url of source.urls) { // TODO make this more efficient; this might leave unnecessary subscriptions hanging
-                const sourceAddress = SourceAddress.from(url);
+                const sourceAddress = SourceAddress.fromUrl(url);
                 if (!sourceAddress){
                     this.logger.error(
                         { loc: "[ADD_METADATA]", url, name },
