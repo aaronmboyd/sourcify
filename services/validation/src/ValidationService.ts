@@ -218,7 +218,7 @@ export class ValidationService implements IValidationService {
      * @return foundSources, missingSources, invalidSources
      */
     private rearrangeSources(metadata: any, byHash: Map<string, PathContent>) {
-        const foundSources: SourceMap = {};
+        const foundSources: StringMap = {};
         const missingSources: any = {};
         const invalidSources: StringMap = {};
         const metadata2provided: StringMap = {}; // maps fileName as in metadata to the fileName of the provided file

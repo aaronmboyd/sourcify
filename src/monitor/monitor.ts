@@ -6,6 +6,9 @@ import { Transaction } from "web3-core";
 import { SourceAddress } from "./util";
 import { ethers } from "ethers";
 import ContractAssembler from "./contract-assembler";
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, "..", "..", "environments/.env") });
 
 function createsContract(tx: Transaction): boolean {
     return !tx.to;
@@ -115,7 +118,7 @@ export default class Monitor {
             throw new Error("Testing not yet supported");
 
         } else {
-            const chains = getMonitoredChains().filter(c => c.network === "goerli"); // TODO testing
+            const chains = getMonitoredChains()
             this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
                 chain.name,
                 chain.chainId.toString(),
