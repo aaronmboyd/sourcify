@@ -100,8 +100,7 @@ export default class SourceFetcher {
         }
 
         const subscription = this.subscriptions[id];
-        delete this.timestamps[id];
-        delete this.subscriptions[id];
+        this.cleanup(id);
 
         this.logger.info({
             loc: "[SOURCE_FETCHER:NOTIFY]",
