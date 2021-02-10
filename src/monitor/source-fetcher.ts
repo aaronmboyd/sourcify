@@ -35,7 +35,7 @@ export default class SourceFetcher {
     ];
 
     constructor() {
-        this.fetchTimeout = parseInt(process.env.MONITOR_FETCH_TIMEOUT) || (2 * 60 * 1000);
+        this.fetchTimeout = parseInt(process.env.MONITOR_FETCH_TIMEOUT) || (2 * 1000); // TODO testing
         this.fetchPause = parseInt(process.env.MONITOR_FETCH_PAUSE) || (1 * 1000);
         this.cleanupTime = parseInt(process.env.MONITOR_CLEANUP_PERIOD) || (30 * 60 * 1000);
         this.fetch([], 0);

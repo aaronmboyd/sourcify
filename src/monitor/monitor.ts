@@ -80,19 +80,23 @@ class ChainMonitor {
             }
 
             const numericBytecode = Web3.utils.hexToBytes(bytecode);
-            const cborData = cborDecode(numericBytecode); // TODO can this throw?
-            const metadataAddress = SourceAddress.fromCborData(cborData);
-            this.contractAssembler.assemble(metadataAddress, contract => {
-                const logObject = { loc: "[PROCESS_BYTECODE]", contract: contract.name, address };
-                this.injector.inject({
-                    contract,
-                    bytecode,
-                    chain: this.chainId,
-                    addresses: [address]
-                }).then(() => this.logger.info(logObject, "Successfully injected")
-                ).catch(err => this.logger.error(logObject, err.message));
-            });
-        }).catch(err => {
+            try {
+                const cborData = cborDecode(numericBytecode);
+                const metadataAddress = SourceAddress.fromCborData(cborData);
+                this.contractAssembler.assemble(metadataAddress, contract => {
+                    const logObject = { loc: "[PROCESS_BYTECODE]", contract: contract.name, address };
+                    this.injector.inject({
+                        contract,
+                        bytecode,
+                        chain: this.chainId,
+                        addresses: [address]
+                    }).then(() => this.logger.info(logObject, "Successfully injected")
+                    ).catch(err => this.logger.error(logObject, err.message));
+                });
+            } catch(err) {
+                this.logger.error({ loc: "[GET_CODE:METADATA_READING]", address }, err.message);
+            }
+            }).catch(err => {
             this.logger.error({ loc: "[GET_CODE]", address, retriesLeft }, err.message);
             setTimeout(this.processBytecode, this.getCodeRetryPause, address, retriesLeft);
         });
