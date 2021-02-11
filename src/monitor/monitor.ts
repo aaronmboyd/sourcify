@@ -23,7 +23,7 @@ class ChainMonitor {
 
     private getCodeRetryPause: number;
     private getBlockPause: number;
-    private initialGetBlockTries: number;
+    private initialGetBytecodeTries: number;
 
     constructor(name: string, chainId: string, web3Url: string, contractAssembler: ContractAssembler, injector: Injector) {
         this.chainId = chainId;
@@ -34,7 +34,7 @@ class ChainMonitor {
 
         this.getCodeRetryPause = parseInt(process.env.GET_CODE_RETRY_PAUSE) || (2 * 1000);
         this.getBlockPause = parseInt(process.env.GET_BLOCK_PAUSE) || (2 * 1000);
-        this.initialGetBlockTries = parseInt(process.env.INITIAL_GET_BLOCK_TRIES) || 3;
+        this.initialGetBytecodeTries = parseInt(process.env.INITIAL_GET_BYTECODE_TRIES) || 3;
     }
 
     start = async (): Promise<void> => {
@@ -54,7 +54,7 @@ class ChainMonitor {
             for (const tx of block.transactions) {
                 if (createsContract(tx)) {
                     const address = ethers.utils.getContractAddress(tx);
-                    this.processBytecode(address, this.initialGetBlockTries);
+                    this.processBytecode(address, this.initialGetBytecodeTries);
                 }
             }
 
@@ -122,7 +122,7 @@ export default class Monitor {
             throw new Error("Testing not yet supported");
 
         } else {
-            const chains = getMonitoredChains()
+            const chains = getMonitoredChains();
             this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
                 chain.name,
                 chain.chainId.toString(),
