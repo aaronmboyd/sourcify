@@ -39,7 +39,7 @@ export default class PendingContract {
 
             for (const url of source.urls) { // TODO make this more efficient; this might leave unnecessary subscriptions hanging
                 const sourceAddress = SourceAddress.fromUrl(url);
-                if (!sourceAddress){
+                if (!sourceAddress) {
                     this.logger.error(
                         { loc: "[ADD_METADATA]", url, name },
                         "Could not determine source file location"

@@ -25,7 +25,7 @@ export default class SourceFetcher {
     private logger = new Logger({ name: "SourceFetcher" });
 
     private fetchTimeout: number; // when to terminate a request
-    private fetchPause: number; // how much time to wait between to requests
+    private fetchPause: number; // how much time to wait between two requests
     private cleanupTime: number;
 
     private gateways: IGateway[] = [
