@@ -30,12 +30,12 @@ export default class SourceFetcher {
 
     private gateways: IGateway[] = [
         new SimpleGateway("ipfs", process.env.IPFS_URL || "https://ipfs.infura.io:5001/api/v0/cat?arg="),
-        // new SimpleGateway(["bzzr0", "bzzr1"], "https://swarm-gateways.net/bzz-raw:/"), // TODO delete
-        new SimpleGateway(["bzzr0", "bzzr1"], "https://gateway.ethswarm.org/bzz:/")
+        new SimpleGateway(["bzzr0", "bzzr1"], "https://swarm-gateways.net/bzz-raw:/"),
+        new SimpleGateway(["bzzr0", "bzzr1"], "https://gateway.ethswarm.org/bzz/")
     ];
 
     constructor() {
-        this.fetchTimeout = parseInt(process.env.MONITOR_FETCH_TIMEOUT) || (5 * 60 * 1000); // TODO testing
+        this.fetchTimeout = parseInt(process.env.MONITOR_FETCH_TIMEOUT) || (5 * 60 * 1000);
         this.fetchPause = parseInt(process.env.MONITOR_FETCH_PAUSE) || (1 * 1000);
         this.cleanupTime = parseInt(process.env.MONITOR_CLEANUP_PERIOD) || (30 * 60 * 1000);
         this.fetch([], 0);
@@ -44,12 +44,16 @@ export default class SourceFetcher {
     private fetch = (sourceHashes: string[], index: number): void => {
         if (index >= sourceHashes.length) {
             this.logger.info({ loc: "[SOURCE_FETCHER]", filesPending: sourceHashes.length }, "New round of file fetching");
-            sourceHashes = Object.keys(this.subscriptions);
-            setTimeout(this.fetch, this.fetchPause, sourceHashes, STARTING_INDEX);
+            const newSourceHashes = Object.keys(this.subscriptions);
+            setTimeout(this.fetch, this.fetchPause, newSourceHashes, STARTING_INDEX);
             return;
         }
 
         const sourceHash = sourceHashes[index];
+        if (!(index in this.subscriptions)) {
+            return;
+        }
+
         if (this.shouldCleanup(sourceHash)) {
             this.cleanup(sourceHash);
             setTimeout(this.fetch, this.fetchPause, sourceHashes, index + 1);
@@ -57,7 +61,7 @@ export default class SourceFetcher {
         }
 
         const subscription = this.subscriptions[sourceHash];
-        const gateway = this.findGateway(subscription.sourceAddress); // TODO this fails -> subscription undefined
+        const gateway = this.findGateway(subscription.sourceAddress);
         const fetchUrl = gateway.createUrl(subscription.sourceAddress.id);
         nodeFetch(fetchUrl, { timeout: this.fetchTimeout }).then(resp => {
             resp.text().then(text => {
@@ -74,12 +78,9 @@ export default class SourceFetcher {
                 }
             });
 
-        }).catch(err => {
-            this.logger.error({
-                loc: "[SOURCE_FETCHER]",
-            }, err.message);
-
-        });
+        }).catch(err => this.logger.error(
+            { loc: "[SOURCE_FETCHER]", fetchUrl }, err.message
+        ));
 
         setTimeout(this.fetch, this.fetchPause, sourceHashes, index+1);
     }
@@ -122,6 +123,7 @@ export default class SourceFetcher {
     }
 
     private cleanup(sourceHash: string) {
+        this.logger.info({ loc: "[SOURCE_FETCHER:CLEANUP]", sourceHash });
         delete this.timestamps[sourceHash];
         delete this.subscriptions[sourceHash];
     }
