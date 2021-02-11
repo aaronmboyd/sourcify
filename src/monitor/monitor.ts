@@ -21,7 +21,7 @@ class ChainMonitor {
     private logger: Logger;
     private injector: Injector;
 
-    private getCodeRetryPause: number;
+    private getBytecodeRetryPause: number;
     private getBlockPause: number;
     private initialGetBytecodeTries: number;
 
@@ -32,7 +32,7 @@ class ChainMonitor {
         this.logger = new Logger({ name });
         this.injector = injector;
 
-        this.getCodeRetryPause = parseInt(process.env.GET_CODE_RETRY_PAUSE) || (2 * 1000);
+        this.getBytecodeRetryPause = parseInt(process.env.GET_BYTECODE_RETRY_PAUSE) || (2 * 1000);
         this.getBlockPause = parseInt(process.env.GET_BLOCK_PAUSE) || (2 * 1000);
         this.initialGetBytecodeTries = parseInt(process.env.INITIAL_GET_BYTECODE_TRIES) || 3;
     }
@@ -75,7 +75,7 @@ class ChainMonitor {
         this.web3Provider.eth.getCode(address).then(bytecode => {
             if (bytecode === "0x") {
                 this.logger.info({ loc: "[PROCESS_BYTECODE]", address, retriesLeft }, "Empty bytecode");
-                setTimeout(this.processBytecode, this.getCodeRetryPause, address, retriesLeft);
+                setTimeout(this.processBytecode, this.getBytecodeRetryPause, address, retriesLeft);
                 return;
             }
 
@@ -94,11 +94,12 @@ class ChainMonitor {
                     ).catch(err => this.logger.error(logObject, err.message));
                 });
             } catch(err) {
-                this.logger.error({ loc: "[GET_CODE:METADATA_READING]", address }, err.message);
+                this.logger.error({ loc: "[GET_BYTECODE:METADATA_READING]", address }, err.message);
             }
-            }).catch(err => {
-            this.logger.error({ loc: "[GET_CODE]", address, retriesLeft }, err.message);
-            setTimeout(this.processBytecode, this.getCodeRetryPause, address, retriesLeft);
+
+        }).catch(err => {
+            this.logger.error({ loc: "[GET_BYTECODE]", address, retriesLeft }, err.message);
+            setTimeout(this.processBytecode, this.getBytecodeRetryPause, address, retriesLeft);
         });
     }
 }
@@ -126,7 +127,7 @@ export default class Monitor {
             this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
                 chain.name,
                 chain.chainId.toString(),
-                chain.web3[0].replace("${INFURA_ID}", process.env.INFURA_ID),
+                chain.web3[0].replace("${INFURA_API_KEY}", process.env.INFURA_ID),
                 contractAssembler,
                 this.injector
             ));
