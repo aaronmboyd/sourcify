@@ -50,7 +50,7 @@ export default class SourceFetcher {
         }
 
         const sourceHash = sourceHashes[index];
-        if (!(index in this.subscriptions)) {
+        if (!(sourceHash in this.subscriptions)) {
             return;
         }
 
