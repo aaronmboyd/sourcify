@@ -10,6 +10,8 @@ import path from 'path';
 import SourceFetcher from "./source-fetcher";
 dotenv.config({ path: path.resolve(__dirname, "..", "..", "environments/.env") });
 
+const BLOCK_PAUSE_FACTOR = parseInt(process.env.BLOCK_PAUSE_FACTOR) || 1.1;
+
 function createsContract(tx: Transaction): boolean {
     return !tx.to;
 }
@@ -32,8 +34,8 @@ class ChainMonitor {
         this.logger = new Logger({ name });
         this.injector = injector;
 
-        this.getBytecodeRetryPause = parseInt(process.env.GET_BYTECODE_RETRY_PAUSE) || (2 * 1000);
-        this.getBlockPause = parseInt(process.env.GET_BLOCK_PAUSE) || (2 * 1000);
+        this.getBytecodeRetryPause = parseInt(process.env.GET_BYTECODE_RETRY_PAUSE) || (5 * 1000);
+        this.getBlockPause = parseInt(process.env.GET_BLOCK_PAUSE) || (10 * 1000);
         this.initialGetBytecodeTries = parseInt(process.env.INITIAL_GET_BYTECODE_TRIES) || 3;
     }
 
@@ -47,8 +49,13 @@ class ChainMonitor {
     private processBlock = (blockNumber: number) => {
         this.web3Provider.eth.getBlock(blockNumber, true).then(block => {
             if (!block) {
-                this.logger.info({ loc: "[PROCESS_BLOCK]", blockNumber }, "Waiting for new blocks");
+                this.getBlockPause *= BLOCK_PAUSE_FACTOR;
+                const logObject = { loc: "[PROCESS_BLOCK]", blockNumber, getBlockPause: this.getBlockPause };
+                this.logger.info(logObject, "Waiting for new blocks");
                 return;
+
+            } else {
+                this.getBlockPause /= BLOCK_PAUSE_FACTOR;
             }
 
             for (const tx of block.transactions) {
