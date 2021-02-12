@@ -1,13 +1,16 @@
+import { CheckedContract } from "@ethereum-sourcify/core";
 import Logger from "bunyan";
 import { StatusCodes } from "http-status-codes";
 import nodeFetch from 'node-fetch';
 import { IGateway, SimpleGateway } from "./gateway";
+import PendingContract from "./pending-contract";
 import { SourceAddress, FetchedFileCallback } from "./util";
 
 const STARTING_INDEX = 0;
 
 type Subscription = {
     sourceAddress: SourceAddress;
+    fetchUrl: string
     subscribers: Array<FetchedFileCallback>;
 }
 
@@ -61,8 +64,7 @@ export default class SourceFetcher {
         }
 
         const subscription = this.subscriptions[sourceHash];
-        const gateway = this.findGateway(subscription.sourceAddress);
-        const fetchUrl = gateway.createUrl(subscription.sourceAddress.id);
+        const fetchUrl = subscription.fetchUrl;
         nodeFetch(fetchUrl, { timeout: this.fetchTimeout }).then(resp => {
             resp.text().then(text => {
                 if (resp.status === StatusCodes.OK) {
@@ -82,7 +84,7 @@ export default class SourceFetcher {
             { loc: "[SOURCE_FETCHER]", fetchUrl }, err.message
         ));
 
-        setTimeout(this.fetch, this.fetchPause, sourceHashes, index+1);
+        setTimeout(this.fetch, this.fetchPause, sourceHashes, index + 1);
     }
 
     private findGateway(sourceAddress: SourceAddress) {
@@ -114,8 +116,11 @@ export default class SourceFetcher {
 
     subscribe(sourceAddress: SourceAddress, callback: FetchedFileCallback): void {
         const sourceHash = sourceAddress.getUniqueIdentifier();
+        const gateway = this.findGateway(sourceAddress);
+        const fetchUrl = gateway.createUrl(sourceAddress.id);
+
         if (!(sourceHash in this.subscriptions)) {
-            this.subscriptions[sourceHash] = { sourceAddress, subscribers: [] };
+            this.subscriptions[sourceHash] = { sourceAddress, fetchUrl, subscribers: [] };
         }
 
         this.timestamps[sourceHash] = new Date();
@@ -131,5 +136,9 @@ export default class SourceFetcher {
     private shouldCleanup(sourceHash: string) {
         const timestamp = this.timestamps[sourceHash];
         return timestamp && (timestamp.getTime() + this.cleanupTime < Date.now());
+    }
+
+    assemble(metadataAddress: SourceAddress, callback: (contract: CheckedContract) => void) {
+        new PendingContract(metadataAddress, this, callback);
     }
 }

@@ -5,9 +5,9 @@ import Web3 from "web3";
 import { Transaction } from "web3-core";
 import { SourceAddress } from "./util";
 import { ethers } from "ethers";
-import ContractAssembler from "./contract-assembler";
 import dotenv from 'dotenv';
 import path from 'path';
+import SourceFetcher from "./source-fetcher";
 dotenv.config({ path: path.resolve(__dirname, "..", "..", "environments/.env") });
 
 function createsContract(tx: Transaction): boolean {
@@ -17,7 +17,7 @@ function createsContract(tx: Transaction): boolean {
 class ChainMonitor {
     private chainId: string;
     private web3Provider: Web3;
-    private contractAssembler: ContractAssembler;
+    private sourceFetcher: SourceFetcher;
     private logger: Logger;
     private injector: Injector;
 
@@ -25,10 +25,10 @@ class ChainMonitor {
     private getBlockPause: number;
     private initialGetBytecodeTries: number;
 
-    constructor(name: string, chainId: string, web3Url: string, contractAssembler: ContractAssembler, injector: Injector) {
+    constructor(name: string, chainId: string, web3Url: string, sourceFetcher: SourceFetcher, injector: Injector) {
         this.chainId = chainId;
         this.web3Provider = new Web3(web3Url);
-        this.contractAssembler = contractAssembler;
+        this.sourceFetcher = sourceFetcher;
         this.logger = new Logger({ name });
         this.injector = injector;
 
@@ -83,7 +83,7 @@ class ChainMonitor {
             try {
                 const cborData = cborDecode(numericBytecode);
                 const metadataAddress = SourceAddress.fromCborData(cborData);
-                this.contractAssembler.assemble(metadataAddress, contract => {
+                this.sourceFetcher.assemble(metadataAddress, contract => {
                     const logObject = { loc: "[PROCESS_BYTECODE]", contract: contract.name, address };
                     this.injector.inject({
                         contract,
@@ -118,7 +118,7 @@ export default class Monitor {
     }
 
     start = (): void => {
-        const contractAssembler = new ContractAssembler();
+        const sourceFetcher = new SourceFetcher();
         if (process.env.TESTING === "true") {
             throw new Error("Testing not yet supported");
 
@@ -128,7 +128,7 @@ export default class Monitor {
                 chain.name,
                 chain.chainId.toString(),
                 chain.web3[0].replace("${INFURA_API_KEY}", process.env.INFURA_ID),
-                contractAssembler,
+                sourceFetcher,
                 this.injector
             ));
         }
