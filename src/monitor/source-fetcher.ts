@@ -7,11 +7,18 @@ import PendingContract from "./pending-contract";
 import { SourceAddress, FetchedFileCallback } from "./util";
 
 const STARTING_INDEX = 0;
+const NO_PAUSE = 0;
 
-type Subscription = {
+class Subscription {
     sourceAddress: SourceAddress;
-    fetchUrl: string
-    subscribers: Array<FetchedFileCallback>;
+    fetchUrl: string;
+    beingProcessed = false;
+    subscribers: Array<FetchedFileCallback> = [];
+
+    constructor(sourceAddress: SourceAddress, fetchUrl: string) {
+        this.sourceAddress = sourceAddress;
+        this.fetchUrl = fetchUrl;
+    }
 }
 
 declare interface SubscriptionMap {
@@ -26,6 +33,8 @@ export default class SourceFetcher {
     private subscriptions: SubscriptionMap = {};
     private timestamps: TimestampMap = {};
     private logger = new Logger({ name: "SourceFetcher" });
+    private fileCounter = 0;
+    private subscriptionCounter = 0;
 
     private fetchTimeout: number; // when to terminate a request
     private fetchPause: number; // how much time to wait between two requests
@@ -34,7 +43,7 @@ export default class SourceFetcher {
     private gateways: IGateway[] = [
         new SimpleGateway("ipfs", process.env.IPFS_URL || "https://ipfs.infura.io:5001/api/v0/cat?arg="),
         new SimpleGateway(["bzzr0", "bzzr1"], "https://swarm-gateways.net/bzz-raw:/"),
-        new SimpleGateway(["bzzr0", "bzzr1"], "https://gateway.ethswarm.org/bzz/")
+        // new SimpleGateway(["bzzr0", "bzzr1"], "https://gateway.ethswarm.org/bzz/") probably does not work
     ];
 
     constructor() {
@@ -46,24 +55,29 @@ export default class SourceFetcher {
 
     private fetch = (sourceHashes: string[], index: number): void => {
         if (index >= sourceHashes.length) {
-            this.logger.info({ loc: "[SOURCE_FETCHER]", filesPending: sourceHashes.length }, "New round of file fetching");
             const newSourceHashes = Object.keys(this.subscriptions);
-            setTimeout(this.fetch, this.fetchPause, newSourceHashes, STARTING_INDEX);
+            setTimeout(this.fetch, NO_PAUSE, newSourceHashes, STARTING_INDEX);
             return;
         }
 
         const sourceHash = sourceHashes[index];
-        if (!(sourceHash in this.subscriptions)) {
-            return;
-        }
-
-        if (this.shouldCleanup(sourceHash)) {
-            this.cleanup(sourceHash);
-            setTimeout(this.fetch, this.fetchPause, sourceHashes, index + 1);
-            return;
-        }
-
         const subscription = this.subscriptions[sourceHash];
+        let nextFast = false;
+
+        if (!(sourceHash in this.subscriptions) || subscription.beingProcessed) {
+            nextFast = true;
+        
+        } else if (this.shouldCleanup(sourceHash)) {
+            this.cleanup(sourceHash);
+            nextFast = true;
+        }
+
+        if (nextFast) {
+            setTimeout(this.fetch, NO_PAUSE, sourceHashes, index + 1);
+            return;
+        }
+
+        subscription.beingProcessed = true;
         const fetchUrl = subscription.fetchUrl;
         nodeFetch(fetchUrl, { timeout: this.fetchTimeout }).then(resp => {
             resp.text().then(text => {
@@ -82,7 +96,9 @@ export default class SourceFetcher {
 
         }).catch(err => this.logger.error(
             { loc: "[SOURCE_FETCHER]", fetchUrl }, err.message
-        ));
+        )).finally(() => {
+            subscription.beingProcessed = false;
+        });
 
         setTimeout(this.fetch, this.fetchPause, sourceHashes, index + 1);
     }
@@ -118,19 +134,28 @@ export default class SourceFetcher {
         const sourceHash = sourceAddress.getUniqueIdentifier();
         const gateway = this.findGateway(sourceAddress);
         const fetchUrl = gateway.createUrl(sourceAddress.id);
-
+        
         if (!(sourceHash in this.subscriptions)) {
-            this.subscriptions[sourceHash] = { sourceAddress, fetchUrl, subscribers: [] };
+            this.subscriptions[sourceHash] = new Subscription(sourceAddress, fetchUrl);
+            this.fileCounter++;
         }
-
+        
         this.timestamps[sourceHash] = new Date();
         this.subscriptions[sourceHash].subscribers.push(callback);
+
+        this.subscriptionCounter++;
+        this.logger.info({ loc: "[SOURCE_FETCHER:NEW_SUBSCRIPTION]", filesPending: this.fileCounter, subscriptions: this.subscriptionCounter });
     }
 
     private cleanup(sourceHash: string) {
-        this.logger.info({ loc: "[SOURCE_FETCHER:CLEANUP]", sourceHash });
         delete this.timestamps[sourceHash];
+        const subscribers = Object.keys(this.subscriptions[sourceHash].subscribers);
+        const subscriptionsDelta = subscribers.length;
         delete this.subscriptions[sourceHash];
+
+        this.fileCounter--;
+        this.subscriptionCounter -= subscriptionsDelta;
+        this.logger.info({ loc: "[SOURCE_FETCHER:CLEANUP]", sourceHash, filesPending: this.fileCounter, subscriptions: this.subscriptionCounter });
     }
 
     private shouldCleanup(sourceHash: string) {
