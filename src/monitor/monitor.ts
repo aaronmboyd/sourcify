@@ -11,6 +11,8 @@ import SourceFetcher from "./source-fetcher";
 dotenv.config({ path: path.resolve(__dirname, "..", "..", "environments/.env") });
 
 const BLOCK_PAUSE_FACTOR = parseInt(process.env.BLOCK_PAUSE_FACTOR) || 1.1;
+const BLOCK_PAUSE_UPPER_LIMIT = parseInt(process.env.BLOCK_PAUSE_UPPER_LIMIT) || (30 * 1000); // default: 30 seconds
+const BLOCK_PAUSE_LOWER_LIMIT = parseInt(process.env.BLOCK_PAUSE_LOWER_LIMIT) || (0.5 * 1000); // default: 0.5 seconds
 
 function createsContract(tx: Transaction): boolean {
     return !tx.to;
@@ -50,12 +52,15 @@ class ChainMonitor {
         this.web3Provider.eth.getBlock(blockNumber, true).then(block => {
             if (!block) {
                 this.getBlockPause *= BLOCK_PAUSE_FACTOR;
+                this.getBlockPause = Math.min(this.getBlockPause, BLOCK_PAUSE_UPPER_LIMIT);
+
                 const logObject = { loc: "[PROCESS_BLOCK]", blockNumber, getBlockPause: this.getBlockPause };
                 this.logger.info(logObject, "Waiting for new blocks");
                 return;
 
             } else {
                 this.getBlockPause /= BLOCK_PAUSE_FACTOR;
+                this.getBlockPause = Math.max(this.getBlockPause, BLOCK_PAUSE_LOWER_LIMIT);
             }
 
             for (const tx of block.transactions) {
