@@ -19,10 +19,13 @@ export default class PendingContract {
     private callback: (contract: CheckedContract) => void;
     private logger = new Logger({ name: "Pending Contract" });
 
-    constructor(metadataAddress: SourceAddress, sourceFetcher: SourceFetcher, callback: (checkedContract: CheckedContract) => void) {
+    constructor(sourceFetcher: SourceFetcher, callback: (checkedContract: CheckedContract) => void) {
         this.sourceFetcher = sourceFetcher;
-        this.sourceFetcher.subscribe(metadataAddress, this.addMetadata);
         this.callback = callback;
+    }
+
+    assemble(metadataAddress: SourceAddress) {
+        this.sourceFetcher.subscribe(metadataAddress, this.addMetadata);
     }
 
     private addMetadata = (rawMetadata: string) => {

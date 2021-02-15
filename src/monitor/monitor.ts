@@ -125,8 +125,6 @@ export default class Monitor {
             log: new Logger({ name: "Monitor" }),
             repositoryPath: config.repository
         });
-
-        this.start();
     }
 
     start = (): void => {

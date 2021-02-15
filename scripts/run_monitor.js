@@ -2,6 +2,8 @@
 const Monitor = require('../dist/monitor/monitor.js').default;
 
 console.log("Starting monitor...");
-new Monitor({
+const monitor = new Monitor({
     repository: 'repository'
 });
+
+monitor.start();

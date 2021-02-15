@@ -164,6 +164,7 @@ export default class SourceFetcher {
     }
 
     assemble(metadataAddress: SourceAddress, callback: (contract: CheckedContract) => void) {
-        new PendingContract(metadataAddress, this, callback);
+        const contract = new PendingContract(this, callback);
+        contract.assemble(metadataAddress);
     }
 }
