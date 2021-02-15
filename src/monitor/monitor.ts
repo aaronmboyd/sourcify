@@ -1,4 +1,4 @@
-import { cborDecode, getMonitoredChains, MonitorConfig } from "@ethereum-sourcify/core";
+import { cborDecode, getMonitoredChains, MonitorConfig, Chain } from "@ethereum-sourcify/core";
 import { Injector } from "@ethereum-sourcify/verification";
 import Logger from "bunyan";
 import Web3 from "web3";
@@ -129,19 +129,15 @@ export default class Monitor {
 
     start = (): void => {
         const sourceFetcher = new SourceFetcher();
-        if (process.env.TESTING === "true") {
-            throw new Error("Testing not yet supported");
+        const chains = getMonitoredChains(process.env.TESTING === "true");
 
-        } else {
-            const chains = getMonitoredChains();
-            this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
-                chain.name,
-                chain.chainId.toString(),
-                chain.web3[0].replace("${INFURA_API_KEY}", process.env.INFURA_ID),
-                sourceFetcher,
-                this.injector
-            ));
-        }
+        this.chainMonitors = chains.map((chain: any) => new ChainMonitor(
+            chain.name,
+            chain.chainId.toString(),
+            chain.web3[0].replace("${INFURA_API_KEY}", process.env.INFURA_ID),
+            sourceFetcher,
+            this.injector
+        ));
 
         this.chainMonitors.forEach(chainMonitor => chainMonitor.start());
     }

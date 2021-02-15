@@ -1,5 +1,28 @@
-// process.env.MOCK_REPOSITORY = './mockRepository';
-// process.env.MOCK_DATABASE = './mockDatabase';
+process.env.MOCK_REPOSITORY = './mockRepository';
+process.env.MOCK_DATABASE = './mockDatabase';
+
+const ganache = require('ganache-cli');
+const util = require('util');
+const ipfs = require('ipfs');
+const rimraf = require('rimraf');
+
+describe("monitor", async function() {
+    const ganacheServer = new ganache.server({ blockTime: 1 }); // TODO blockTime
+    const ipfsNode = await ipfs.create({ offline: true, silent: true });
+    const mockRepoPath = process.env.MOCK_REPOSITORY;
+    const ganachePort = process.env.LOCALCHAIN_PORT || 8545;
+
+    before(async function() {
+        await util.promisify(ganacheServer.listen)(ganachePort);
+        rimraf(mockRepoPath);
+    });
+
+    after(async function() {
+        await util.promisify(ganacheServer.close)();
+        await ipfs.stop();
+        rimraf(mockRepoPath);
+    });
+});
 
 // const assert = require('assert');
 // const ganache = require('ganache-cli');
